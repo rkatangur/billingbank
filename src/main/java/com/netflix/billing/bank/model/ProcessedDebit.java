@@ -6,20 +6,18 @@ import com.netflix.billing.bank.controller.wire.CreditType;
 
 public class ProcessedDebit {
 
-	// Id denoting the receipt for the charge. Should be unique for a given
-	// customer.
-	private String invoiceId;
+	private BankingTransaction curTransaction;
 	private Long amount;
+
 	private String transactionId; // Credit transactionId it was charged against.
 	private CreditType creditType; // Credit type it was charged against.
-	private Instant transactionDate; // The time in UTC when the debit was applied to the account.
 
-	public String getInvoiceId() {
-		return invoiceId;
+	public ProcessedDebit(BankingTransaction curTransaction) {
+		this.curTransaction = curTransaction;
 	}
 
-	public void setInvoiceId(String invoiceId) {
-		this.invoiceId = invoiceId;
+	public String getInvoiceId() {
+		return curTransaction.getTransactionId();
 	}
 
 	public Long getAmount() {
@@ -47,10 +45,13 @@ public class ProcessedDebit {
 	}
 
 	public Instant getTransactionDate() {
-		return transactionDate;
+		return curTransaction.getTransactionTime();
 	}
 
-	public void setTransactionDate(Instant transactionDate) {
-		this.transactionDate = transactionDate;
+	@Override
+	public String toString() {
+		return "ProcessedDebit [customerId=" + curTransaction.getCustomerId() + ", invoiceId="
+				+ curTransaction.getCustomerId() + "]";
 	}
+
 }

@@ -6,33 +6,31 @@ import com.netflix.billing.bank.controller.wire.CreditType;
 
 public class ProcessedCredit implements Cloneable {
 
-	private String transactionId;
+	private final String CTypeTransId;
+	private final BankingTransaction curTransaction;
+
 	private volatile long amount = 0;
 	private String currency;
+
 	// Type of credit. Different types of credits cannot be merged with each other.
 	private CreditType creditType;
-
-	private Instant transactionDate; // The time in UTC when the debit was applied to the account.
-	private final String CTypeTransId;
 
 	public String getCTypeTransId() {
 		return CTypeTransId;
 	}
 
-	public ProcessedCredit(CreditType creditType, String transactionId) {
-		this.CTypeTransId = buildCreditTransactionId(creditType, transactionId);
+	public ProcessedCredit(CreditType creditType, BankingTransaction curTransaction) {
+		this.curTransaction = curTransaction;
+		this.CTypeTransId = buildCreditTransactionId(creditType, curTransaction.getTransactionId());
 	}
 
+	// The time in UTC when the credit was applied to the account.
 	public Instant getTransactionDate() {
-		return transactionDate;
+		return this.curTransaction.getTransactionTime();
 	}
 
 	public String getTransactionId() {
-		return transactionId;
-	}
-
-	public void setTransactionId(String transactionId) {
-		this.transactionId = transactionId;
+		return curTransaction.getTransactionId();
 	}
 
 	public long getAmount() {
@@ -59,10 +57,6 @@ public class ProcessedCredit implements Cloneable {
 		this.creditType = creditType;
 	}
 
-	public void setTransactionDate(Instant transactionDate) {
-		this.transactionDate = transactionDate;
-	}
-
 	public static String buildCreditTransactionId(CreditType creditType, String transactionId) {
 		String creditTransId = String.format("ctype-%s-%s", creditType.ordinal(), transactionId);
 		return creditTransId;
@@ -71,6 +65,11 @@ public class ProcessedCredit implements Cloneable {
 	@Override
 	protected ProcessedCredit clone() throws CloneNotSupportedException {
 		return (ProcessedCredit) super.clone();
+	}
+
+	@Override
+	public String toString() {
+		return "ProcessedCredit [customerId=" + curTransaction.getCustomerId() + ", CTypeTransId=" + CTypeTransId + "]";
 	}
 
 }

@@ -1,6 +1,7 @@
 package com.netflix.billing.bank.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -35,7 +36,11 @@ public class BankController {
 	 */
 	@GetMapping("customer/{customerId}/balance")
 	public CustomerBalance getBalance(@PathVariable String customerId) {
-		return billingBankStore.getCustomerAccountBalance(customerId);
+		CustomerBalance customerBal = billingBankStore.getCustomerAccountBalance(customerId);
+		if (customerBal == null) {
+			customerBal = new CustomerBalance();
+		}
+		return customerBal;
 	}
 
 	/**
@@ -71,7 +76,22 @@ public class BankController {
 	 */
 	@GetMapping("customer/{customerId}/history")
 	public DebitHistory debitHistory(@PathVariable String customerId) {
-		return billingBankStore.debitHistory(customerId);
+		DebitHistory debitHistory = billingBankStore.debitHistory(customerId);
+		if (debitHistory == null) {
+			debitHistory = new DebitHistory();
+		}
+		return debitHistory;
+	}
+
+	/**
+	 *
+	 * @param customerId String id representing the customer/account id.
+	 * @return The debitHistory object representing all the debit transactions made
+	 *         to the customer's account.
+	 */
+	@DeleteMapping("customer/{customerId}")
+	public CustomerBalance deleteCustomer(@PathVariable String customerId) {
+		return billingBankStore.delete(customerId);
 	}
 
 }

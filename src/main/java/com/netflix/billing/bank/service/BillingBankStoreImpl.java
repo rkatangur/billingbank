@@ -10,7 +10,9 @@ import com.netflix.billing.bank.controller.wire.CreditAmount;
 import com.netflix.billing.bank.controller.wire.CustomerBalance;
 import com.netflix.billing.bank.controller.wire.DebitAmount;
 import com.netflix.billing.bank.controller.wire.DebitHistory;
+import com.netflix.billing.bank.model.BankingTransaction;
 import com.netflix.billing.bank.model.CustomerAccount;
+import com.netflix.billing.bank.model.TransactionType;
 
 @Service
 public class BillingBankStoreImpl implements BillingBankStore {
@@ -19,14 +21,6 @@ public class BillingBankStoreImpl implements BillingBankStore {
 
 	private ConcurrentHashMap<String, AccountSynchronizer> custActSyncMap = new ConcurrentHashMap<>();
 	private ConcurrentHashMap<String, CustomerAccount> customers = new ConcurrentHashMap<>();
-
-	// Recording a key of customerid+credittype+transactionid ---> CreditRequest to
-	// store all credits.
-	private final ConcurrentHashMap<String, CreditAmount> processedCredits = new ConcurrentHashMap<>();
-
-	// Recording a key of customerid+invoiceid ---> DebitAmount to store all debits
-	// that are processed.
-	private final ConcurrentHashMap<String, DebitAmount> processedDebits = new ConcurrentHashMap<>();
 
 	private AccountSynchronizer getOrCreateCustomerSynchronizer(String customerId) {
 		AccountSynchronizer newAcctSync = new AccountSynchronizer(customerId);
@@ -61,21 +55,25 @@ public class BillingBankStoreImpl implements BillingBankStore {
 		try {
 			custActSync.acquireWriteLock();
 
-			String creditReqKey = String.format("%s-%s-%s", customerId, creditReq.getCreditType().ordinal(),
+			CustomerAccount custAccount = getOrCreateCustomerAccount(customerId);
+
+			String creditReqTrnId = String.format("%s-%s-%s", customerId, creditReq.getCreditType().ordinal(),
 					creditReq.getTransactionId());
 
-			CreditAmount processedCreditAmt = processedCredits.putIfAbsent(creditReqKey, creditReq);
+			boolean canProcess = custAccount.canProcessReq(creditReqTrnId, TransactionType.CREDIT,
+					creditReq.getTransactionId(), JsonUtils.writeValueAsString(creditReq));
+
 			// if the credit request key is not seen before only then process the process
 			// the request
-			if (processedCreditAmt == null) {
-				LOGGER.info("Processing credit request with key " + creditReqKey + ".");
+			if (canProcess) {
+				LOGGER.info("Processing credit request with key " + creditReqTrnId + ".");
 				// go ahead and process the credit and update all indexes.
-				CustomerAccount custAccount = getOrCreateCustomerAccount(customerId);
-				custAccount.processCredit(creditReq);
+				BankingTransaction curTrn = custAccount.getCurTransaction(creditReqTrnId, TransactionType.CREDIT);
+				custAccount.processCredit(creditReq, curTrn);
 			} else {
 				// duplicate request log and leave it.
 				LOGGER.info(
-						"Ignoring process credit request with key " + creditReqKey + " as it is already processed.");
+						"Ignoring process credit request with key " + creditReqTrnId + " as it is already processed.");
 			}
 		} finally {
 			custActSync.releaseWriteLock();
@@ -90,19 +88,21 @@ public class BillingBankStoreImpl implements BillingBankStore {
 		try {
 			custActSync.acquireWriteLock();
 
-			String debitReqKey = String.format("%s-%s", customerId, debitAmount.getInvoiceId());
-			DebitAmount processedDebitAmt = processedDebits.putIfAbsent(debitReqKey, debitAmount);
+			CustomerAccount custAccount = getOrCreateCustomerAccount(customerId);
+
+			String debitTrnId = String.format("%s-%s", customerId, debitAmount.getInvoiceId());
+			boolean canProcess = custAccount.canProcessReq(debitTrnId, TransactionType.DEBIT,
+					debitAmount.getInvoiceId(), JsonUtils.writeValueAsString(debitAmount));
 
 			// if debit request key is not seen before only then process the process
 			// the request
-			if (processedDebitAmt == null) {
-				LOGGER.info("Processing Debit request with key " + debitReqKey + ".");
+			if (canProcess) {
+				LOGGER.info("Processing Debit request with key " + debitTrnId + ".");
 				// go ahead and process the credit and update all indexes.
-				CustomerAccount custAccount = getOrCreateCustomerAccount(customerId);
-				custAccount.processDebit(processedDebitAmt);
+				custAccount.processDebit(debitAmount, custAccount.getCurTransaction(debitTrnId, TransactionType.DEBIT));
 			} else {
 				// duplicate request log and leave it.
-				LOGGER.info("Ignoring process Debit request with key " + debitReqKey + " as it is already processed.");
+				LOGGER.info("Ignoring process Debit request with key " + debitTrnId + " as it is already processed.");
 			}
 		} finally {
 			custActSync.releaseWriteLock();
@@ -121,10 +121,13 @@ public class BillingBankStoreImpl implements BillingBankStore {
 		if (custActSync != null) {
 			try {
 				custActSync.acquireReadLock();
-				custBal = new CustomerBalance();
 				CustomerAccount custAccount = getCustomerAccount(customerId);
-				// TODO: Handle NPE error if custAccount is null
-				custBal.setBalanceAmounts(custAccount.getAccountBalance());
+				if (custAccount != null) {
+					custBal = new CustomerBalance();
+					custBal.setBalanceAmounts(custAccount.getAccountBalance());
+				} else {
+					LOGGER.info("No CustomerAccount found with id " + customerId + " to get CustomerAccountBalance.");
+				}
 				return custBal;
 			} finally {
 				custActSync.releaseReadLock();
@@ -133,10 +136,6 @@ public class BillingBankStoreImpl implements BillingBankStore {
 		return custBal;
 	}
 
-	/**
-	 * 
-	 * 
-	 */
 	public DebitHistory debitHistory(String customerId) {
 		DebitHistory debitHistory = null;
 		AccountSynchronizer custActSync = getCustomerSynchronizer(customerId);
@@ -144,13 +143,36 @@ public class BillingBankStoreImpl implements BillingBankStore {
 			try {
 				custActSync.acquireReadLock();
 				CustomerAccount custAccount = getCustomerAccount(customerId);
-
-				// TODO: Handle NPE error if custAccount is null
-				debitHistory = new DebitHistory(custAccount.getProcessedDebits());
+				if (custAccount != null) {
+					debitHistory = new DebitHistory(custAccount.getProcessedDebits());
+				} else {
+					LOGGER.info("No CustomerAccount found with id " + customerId + " to get debitHistory.");
+				}
 			} finally {
 				custActSync.releaseReadLock();
 			}
 		}
 		return debitHistory;
+	}
+
+	@Override
+	public CustomerBalance delete(String customerId) {
+		CustomerBalance custBal = null;
+		AccountSynchronizer custActSync = getCustomerSynchronizer(customerId);
+		if (custActSync != null) {
+			try {
+				custActSync.acquireWriteLock();
+				CustomerAccount custAccount = customers.remove(customerId);
+				if (custAccount != null) {
+					LOGGER.info("Removed customer with " + customerId + " id.");
+					custBal = new CustomerBalance();
+					custBal.setBalanceAmounts(custAccount.getAccountBalance());
+				}
+			} finally {
+				custActSync.releaseWriteLock();
+			}
+		}
+
+		return custBal;
 	}
 }

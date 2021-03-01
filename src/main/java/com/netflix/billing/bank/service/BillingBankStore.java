@@ -14,4 +14,6 @@ public interface BillingBankStore {
 	CustomerBalance processCredit(String customerId, CreditAmount creditReq);
 
 	DebitHistory debitHistory(String customerId);
+
+	CustomerBalance delete(String customerId);
 }

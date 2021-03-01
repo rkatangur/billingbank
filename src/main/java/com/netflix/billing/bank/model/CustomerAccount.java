@@ -25,6 +25,15 @@ public class CustomerAccount {
 	// build a key of currency to CustomerAccountBalance
 	private final ConcurrentHashMap<String, CustomerAccountByCurrency> custActBalMapByCurrency = new ConcurrentHashMap<>();
 
+	// Recording a key of customerid+credittype+transactionid ---> CreditRequest to
+	// store the CreditAmount request that is tied to a request.
+	private final ConcurrentHashMap<String, BankingTransaction> processedCredits = new ConcurrentHashMap<>();
+
+	// Recording a key of customerid+invoiceid ---> DebitAmount to store all debits
+	// that are processed.
+	// store the DebitAmount request that is tied to the request.
+	private final ConcurrentHashMap<String, BankingTransaction> processedDebits = new ConcurrentHashMap<>();
+
 	public CustomerAccount(String customerId) {
 		this.customerId = customerId;
 	}
@@ -34,14 +43,21 @@ public class CustomerAccount {
 	 * 
 	 * @param creditReq
 	 */
-	public void processCredit(CreditAmount creditReq) {
-		if (creditReq == null) {
-			return;
-		}
+	public void processCredit(CreditAmount creditReq, BankingTransaction curTransaction) {
 
-		CustomerAccountByCurrency custActBalByCur = getOrCreateCustomerAccountBalance(customerId,
-				creditReq.getMoney().getCurrency());
-		custActBalByCur.processCredit(creditReq);
+		TransactionStatus status = TransactionStatus.RECEIVED;
+		try {
+			if (creditReq != null) {
+				CustomerAccountByCurrency custActBalByCur = getOrCreateCustomerAccountBalance(customerId,
+						creditReq.getMoney().getCurrency());
+				custActBalByCur.processCredit(creditReq, curTransaction);
+			}
+			status = TransactionStatus.SUCESS;
+		} catch (Exception e) {
+			status = TransactionStatus.FAILURE;
+		} finally {
+			curTransaction.setStatus(status);
+		}
 	}
 
 	/**
@@ -49,19 +65,28 @@ public class CustomerAccount {
 	 * 
 	 * @param creditReq
 	 */
-	public void processDebit(DebitAmount debitReq) {
-		if (debitReq == null || debitReq.getMoney() == null) {
-			return;
-		}
-
-		CustomerAccountByCurrency custActBal = custActBalMapByCurrency.get(debitReq.getMoney().getCurrency());
-		if (custActBal != null) {
-			custActBal.processDebit(debitReq);
-		} else {
-			// Not possible better log a statement.
-			LOGGER.info("processDebit");
-			throw new ApiException(
-					"No credit avialble to process debit request with currency " + debitReq.getMoney().getCurrency());
+	public void processDebit(DebitAmount debitReq, BankingTransaction curTransaction) {
+		TransactionStatus status = TransactionStatus.RECEIVED;
+		try {
+			if (debitReq != null && debitReq.getMoney() != null) {
+				CustomerAccountByCurrency custActBal = custActBalMapByCurrency.get(debitReq.getMoney().getCurrency());
+				if (custActBal != null) {
+					custActBal.processDebit(debitReq, curTransaction);
+					status = TransactionStatus.SUCESS;
+				} else {
+					status = TransactionStatus.FAILURE;
+					String errorMsg = String.format(
+							"No credits avialble to process debit request with currency  for customer %s, currency %s",
+							customerId, debitReq.getMoney().getCurrency());
+					LOGGER.error(errorMsg);
+					throw new ApiException(errorMsg);
+				}
+			}
+		} catch (Exception e) {
+			status = TransactionStatus.FAILURE;
+			throw e;
+		} finally {
+			curTransaction.setStatus(status);
 		}
 	}
 
@@ -127,6 +152,30 @@ public class CustomerAccount {
 		}
 
 		return debitLineItems;
+	}
+
+	public boolean canProcessReq(String id, TransactionType transactionType, String transactionId,
+			String rawReqAsJson) {
+		BankingTransaction newCustTrans = new BankingTransaction(id, customerId, transactionType, transactionId);
+		newCustTrans.setRequest(rawReqAsJson);
+		newCustTrans.setStatus(TransactionStatus.RECEIVED);
+
+		BankingTransaction custTransInMap = null;
+		if (TransactionType.CREDIT.equals(transactionType)) {
+			custTransInMap = processedCredits.putIfAbsent(id, newCustTrans);
+		} else {
+			custTransInMap = processedDebits.putIfAbsent(id, newCustTrans);
+		}
+
+		return (custTransInMap == null) ? true : false;
+	}
+
+	public BankingTransaction getCurTransaction(String id, TransactionType transactionType) {
+		if (TransactionType.CREDIT.equals(transactionType)) {
+			return processedCredits.get(id);
+		} else {
+			return processedDebits.get(id);
+		}
 	}
 
 }

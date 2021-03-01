@@ -1,6 +1,5 @@
 package com.netflix.billing.bank.model;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedList;
@@ -28,9 +27,9 @@ public class CustomerAccountByCurrency {
 	// build a key of credit-type to CustomerBalance
 	private final ConcurrentMap<CreditType, Long> balanceByCreditType = new ConcurrentHashMap<>();
 
-	// build a key of credittype+transactionid and map the credits that are
-	// processed.
-	private final ConcurrentMap<String, ProcessedCredit> creditsMapByTypeAndTransId = new ConcurrentHashMap<>();
+//	// build a key of credittype+transactionid and map the credits that are
+//	// processed.
+//	private final ConcurrentMap<String, ProcessedCredit> creditsMapByTypeAndTransId = new ConcurrentHashMap<>();
 
 	// build a key of invoiceid to a map of processed Debits
 	private final LinkedList<ProcessedDebit> processedDebits = new LinkedList<ProcessedDebit>();
@@ -61,20 +60,16 @@ public class CustomerAccountByCurrency {
 		this.currency = currency;
 	}
 
-	void processCredit(CreditAmount creditAmt) {
+	void processCredit(CreditAmount creditAmt, BankingTransaction curTransaction) {
 
 		CreditType creditType = creditAmt.getCreditType();
-		String transactionId = creditAmt.getTransactionId();
 		Long amount = creditAmt.getMoney().getAmount();
 
-		ProcessedCredit procCredit = new ProcessedCredit(creditType, transactionId);
+		ProcessedCredit procCredit = new ProcessedCredit(creditType, curTransaction);
 		procCredit.setAmount(amount);
 		procCredit.setCreditType(creditType);
 		procCredit.setCurrency(currency);
-		procCredit.setTransactionId(transactionId);
-		procCredit.setTransactionDate(Instant.now());
 
-		creditsMapByTypeAndTransId.put(procCredit.getCTypeTransId(), procCredit);
 		sortedCredits.offer(procCredit);
 
 		updateBalance(creditType, amount);
@@ -103,7 +98,7 @@ public class CustomerAccountByCurrency {
 		return totalBalance;
 	}
 
-	void processDebit(DebitAmount debitAmount) {
+	void processDebit(DebitAmount debitAmount, BankingTransaction curTransaction) {
 		Long amtToDebit = debitAmount.getMoney().getAmount();
 
 		long totalCreditsAvail = totalCreditsAvailable();
@@ -147,7 +142,7 @@ public class CustomerAccountByCurrency {
 					// adjust the leftover amount on the processed credit or availCredit object
 					availCredit.setAmount(remainingCreditAmt);
 					sortedCredits.offer(availCredit);
-					creditsMapByTypeAndTransId.put(availCredit.getCTypeTransId(), availCredit);
+//					creditsMapByTypeAndTransId.put(availCredit.getCTypeTransId(), availCredit);
 
 					// updateBalance(availCredit.getCreditType(), amtToDebit * -1);
 					// Debit request is fullfilled completely.
@@ -162,7 +157,7 @@ public class CustomerAccountByCurrency {
 				}
 			}
 
-			postProcessOnCompletion(debitAmount, creditsUsed);
+			postProcessOnCompletion(debitAmount, creditsUsed, curTransaction);
 		} catch (ApiException e) {
 			LOGGER.error("Exception while processing debit request", e);
 			// handle the case by rollbacking the credits that were removed/adjusted.
@@ -171,6 +166,13 @@ public class CustomerAccountByCurrency {
 		}
 	}
 
+	/**
+	 * 
+	 * Implementaion fo rollback the credits if needed.
+	 * 
+	 * @param debit
+	 * @param creditsUsed
+	 */
 	private void rollbackDebitTransaction(DebitAmount debit, List<ProcessedCredit> creditsUsed) {
 		// credits are rollbacked here by adding them back to the sorted queue.
 		// No debit lineitems are built as the transaction has failed.
@@ -188,32 +190,41 @@ public class CustomerAccountByCurrency {
 		}
 	}
 
-	// Build the ProcessedDebit lineitems and add it to processedDebits collection
-	// update the credit balance by deducting the credit amounts that are used.
-	private void postProcessOnCompletion(DebitAmount debit, List<ProcessedCredit> creditsUsed) {
+	/**
+	 * 
+	 * Build the ProcessedDebit lineitems and add it to processedDebits collection
+	 * update the credit balance by deducting the credit amounts that are used.
+	 * 
+	 * @param debit
+	 * @param creditsUsed
+	 * @param curTransaction
+	 */
+	private void postProcessOnCompletion(DebitAmount debit, List<ProcessedCredit> creditsUsed,
+			BankingTransaction curTransaction) {
 		// After adjusting the credit amount left, put the entry back int the map and
 		// into the sorted queue.
 		for (ProcessedCredit creditUsed : creditsUsed) {
 			// create debit lineitem for the credit amount that was used.
-			processedDebits.add(createDebitTransaction(debit.getInvoiceId(), creditUsed.getAmount(), creditUsed));
+			processedDebits.add(createDebitTransaction(creditUsed.getAmount(), creditUsed, curTransaction));
 			updateBalance(creditUsed.getCreditType(), creditUsed.getAmount() * -1);
 
-			ProcessedCredit creditAvailInQ = sortedCredits.peek();
-			if (!creditAvailInQ.getCTypeTransId().equals(creditUsed.getCTypeTransId())) {
-				creditsMapByTypeAndTransId.remove(creditUsed.getCTypeTransId());
-			} else {
-				// do nothing here as the amount is adjust in the while loop above.
-			}
+//			ProcessedCredit creditAvailInQ = sortedCredits.peek();
+//			if (!creditAvailInQ.getCTypeTransId().equals(creditUsed.getCTypeTransId())) {
+////				creditsMapByTypeAndTransId.remove(creditUsed.getCTypeTransId());
+//			} else {
+//				// do nothing here as the amount is adjust in the while loop above.
+//			}
 		}
 	}
 
-	private ProcessedDebit createDebitTransaction(String invoiceId, Long amtDebitted, ProcessedCredit availCredit) {
-		ProcessedDebit processedDebit = new ProcessedDebit();
+	private ProcessedDebit createDebitTransaction(Long amtDebitted, ProcessedCredit creditUsed,
+			BankingTransaction curTransaction) {
+		ProcessedDebit processedDebit = new ProcessedDebit(curTransaction);
 		processedDebit.setAmount(amtDebitted);
-		processedDebit.setCreditType(availCredit.getCreditType());
-		processedDebit.setInvoiceId(invoiceId);
-		processedDebit.setTransactionId(availCredit.getTransactionId());
-		processedDebit.setTransactionDate(Instant.now());
+
+		// mapping the credit trn information that is used.
+		processedDebit.setCreditType(creditUsed.getCreditType());
+		processedDebit.setTransactionId(creditUsed.getTransactionId());
 
 		return processedDebit;
 	}
