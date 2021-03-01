@@ -17,6 +17,14 @@ import com.netflix.billing.bank.controller.wire.CreditType;
 import com.netflix.billing.bank.controller.wire.DebitAmount;
 import com.netflix.billing.bank.exception.ApiException;
 
+/**
+ * 
+ * Holder for customer account by currency where the debits and credits and
+ * stored.
+ * 
+ * @author rkata
+ *
+ */
 public class CustomerAccountByCurrency {
 
 	private static Logger LOGGER = LoggerFactory.getLogger(CustomerAccountByCurrency.class);
@@ -48,7 +56,7 @@ public class CustomerAccountByCurrency {
 				} else if (o1AppliedDatetime > o2AppliedDatetime) {
 					return 1;
 				} else {
-					return 1;
+					return 0;
 				}
 			}
 			return creditTypeCompareRes;
@@ -98,6 +106,13 @@ public class CustomerAccountByCurrency {
 		return totalBalance;
 	}
 
+	/**
+	 * 
+	 * Process debit amount request for the customer.
+	 * 
+	 * @param debitAmount
+	 * @param curTransaction
+	 */
 	void processDebit(DebitAmount debitAmount, BankingTransaction curTransaction) {
 		Long amtToDebit = debitAmount.getMoney().getAmount();
 
@@ -111,6 +126,7 @@ public class CustomerAccountByCurrency {
 			throw new ApiException(errorMsg);
 		}
 
+		//maintaining all the credits that are used to full fill the BankingTransaction
 		List<ProcessedCredit> creditsUsed = new ArrayList<>();
 		try {
 			while (amtToDebit > 0) {
@@ -125,7 +141,7 @@ public class CustomerAccountByCurrency {
 
 				// Left over credit to use, update the amount on the available credit amount.
 				if (remainingCreditAmt > 0) {
-
+					
 					ProcessedCredit usedCredit = null;
 					try {
 						usedCredit = (ProcessedCredit) availCredit.clone();
@@ -142,9 +158,7 @@ public class CustomerAccountByCurrency {
 					// adjust the leftover amount on the processed credit or availCredit object
 					availCredit.setAmount(remainingCreditAmt);
 					sortedCredits.offer(availCredit);
-//					creditsMapByTypeAndTransId.put(availCredit.getCTypeTransId(), availCredit);
 
-					// updateBalance(availCredit.getCreditType(), amtToDebit * -1);
 					// Debit request is fullfilled completely.
 					amtToDebit = 0l;
 				} else if (remainingCreditAmt <= 0) {
@@ -161,6 +175,7 @@ public class CustomerAccountByCurrency {
 		} catch (ApiException e) {
 			LOGGER.error("Exception while processing debit request", e);
 			// handle the case by rollbacking the credits that were removed/adjusted.
+			//Not needed - this is just a buffer
 			rollbackDebitTransaction(debitAmount, creditsUsed);
 			throw e;
 		}

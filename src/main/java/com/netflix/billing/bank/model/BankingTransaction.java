@@ -3,8 +3,7 @@ package com.netflix.billing.bank.model;
 import java.time.Instant;
 
 /**
- * All the idempotent transactions are identified by the customer transaction
- * before the application process it.
+ * All the idempotent transactions are identified by the id.
  * 
  * @author rkata
  *

@@ -1,0 +1,218 @@
+
+
+1. Post Credit Sample Request:
+
+	curl --request POST \
+	  --url http://localhost:8080/customer/cust-123/credit \
+	  --header 'Content-Type: application/json' \
+	  --data '{
+	"transactionId":"t123",
+	"creditType":0,
+	"money": {
+				"amount":10,
+				"currency":"USD"
+			}
+	}'
+	
+	
+	Response:			
+	{
+	  "balanceAmounts": {
+	    "GIFTCARD": [
+	      {
+	        "amount": 10,
+	        "currency": "USD"
+	      }
+	    ]
+	  }
+	}
+	
+
+2. Post Credit Sample Request with the same transaction id but different credit-type: 
+
+	curl --request POST \
+	  --url http://localhost:8080/customer/cust-123/credit \
+	  --header 'Content-Type: application/json' \
+	  --data '{
+				"transactionId":"t123",
+				"creditType":2,
+				"money": {
+							"amount":30,
+							"currency":"USD"
+						 }
+				}'
+
+
+    Response:
+			    {
+				  "balanceAmounts": {
+				    "CASH": [
+				      {
+				        "amount": 30,
+				        "currency": "USD"
+				      }
+				    ],
+				    "GIFTCARD": [
+				      {
+				        "amount": 10,
+				        "currency": "USD"
+				      }
+				    ]
+				  }
+				}
+
+
+3. Get customer balance
+
+	Request:
+	curl --request GET \
+	  --url http://localhost:8080/customer/cust-123/balance \
+	  --header 'Content-Type: application/json'
+
+	Response:
+			 {
+			  "balanceAmounts": {
+			    "CASH": [
+			      {
+			        "amount": 30,
+			        "currency": "USD"
+			      }
+			    ],
+			    "GIFTCARD": [
+			      {
+			        "amount": 10,
+			        "currency": "USD"
+			      }
+			    ]
+			  }
+			}
+
+
+4. Post debit with currency of type USD
+
+	Request:
+	
+	curl --request POST \
+	  --url http://localhost:8080/customer/cust-123/debit \
+	  --header 'Content-Type: application/json' \
+	  --data '{
+			"invoiceId":"inv_125",
+			"money": {
+							"amount":30,
+							"currency":"USD"
+					}
+			  }'
+			
+	Response:	
+				{
+				  "balanceAmounts": {
+				    "CASH": [
+				      {
+				        "amount": 10,
+				        "currency": "USD"
+				      }
+				    ]
+				  }
+				}
+
+
+5. Post debit with currency of type USD that fails.
+
+	Request:
+			curl --request POST \
+			  --url http://localhost:8080/customer/cust-123/debit \
+			  --header 'Content-Type: application/json' \
+			  --data '{
+						"invoiceId":"inv_124",
+						"money": {
+										"amount":26,
+										"currency":"USD"
+								 }
+						}'
+	
+	Response:
+			{
+			  "timestamp": "2021-03-01T22:39:51.234+0000",
+			  "status": 500,
+			  "error": "Internal Server Error",
+			  "message": "Not enough credit amount is avialble for customer cust-123 to process debit request, totalCreditsAvail 10, amtToDebit 26, currency USD ",
+			  "path": "/customer/cust-123/debit"
+			}
+
+
+6. The above should have no effect on the customer account balance, balance should be same as #4
+
+	Request:
+		curl --request GET \
+	  --url http://localhost:8080/customer/cust-123/balance \
+	  --header 'Content-Type: application/json'
+	
+	Response:
+			{
+			  "balanceAmounts": {
+			    "CASH": [
+			      {
+			        "amount": 10,
+			        "currency": "USD"
+			      }
+			    ]
+			  }
+			}
+
+
+7. Get debit history
+
+	Request:
+		
+		curl --request GET \
+	  --url http://localhost:8080/customer/cust-123/history \
+	  --header 'Content-Type: application/json'
+
+	Response:	
+			{
+			  "debits": [
+			    {
+			      "invoiceId": "inv_125",
+			      "amount": {
+			        "amount": 10,
+			        "currency": "USD"
+			      },
+			      "transactionId": "t123",
+			      "creditType": "GIFTCARD",
+			      "transactionDate": "2021-03-01T22:38:19.603Z"
+			    },
+			    {
+			      "invoiceId": "inv_125",
+			      "amount": {
+			        "amount": 20,
+			        "currency": "USD"
+			      },
+			      "transactionId": "t123",
+			      "creditType": "CASH",
+			      "transactionDate": "2021-03-01T22:38:19.603Z"
+			    }
+			  ]
+			}
+
+
+
+8. Clear customer
+
+	curl --request DELETE \
+	  --url http://localhost:8080/customer/cust-123 \
+	  --header 'Content-Type: application/json'
+	  
+	  
+	  Response:	  
+			  {
+				 "balanceAmounts": {
+				    "CASH": [
+				      {
+				        "amount": 10,
+				        "currency": "USD"
+				      }
+				    ]
+				  }
+				}
+				
+				

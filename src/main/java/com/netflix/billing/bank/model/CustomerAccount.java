@@ -16,6 +16,13 @@ import com.netflix.billing.bank.controller.wire.DebitLineItem;
 import com.netflix.billing.bank.controller.wire.Money;
 import com.netflix.billing.bank.exception.ApiException;
 
+/**
+ * 
+ * CustomerAccount with the balance
+ * 
+ * @author rkata
+ *
+ */
 public class CustomerAccount {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(CustomerAccount.class);
@@ -107,6 +114,12 @@ public class CustomerAccount {
 		return custActBal;
 	}
 
+	/**
+	 * Computes the account balance by using CustomerAccountByCurrency which
+	 * maintains an aggregated balance by currency, creditType
+	 * 
+	 * @return
+	 */
 	public Map<CreditType, List<Money>> getAccountBalance() {
 
 		Map<CreditType, List<Money>> custActBalanceByCreditType = new HashMap<>();
@@ -154,6 +167,17 @@ public class CustomerAccount {
 		return debitLineItems;
 	}
 
+	/**
+	 * 
+	 * Binds every transaction received with an id and uses it to decide whether it
+	 * can be processed or not.
+	 * 
+	 * @param id
+	 * @param transactionType
+	 * @param transactionId
+	 * @param rawReqAsJson
+	 * @return
+	 */
 	public boolean canProcessReq(String id, TransactionType transactionType, String transactionId,
 			String rawReqAsJson) {
 		BankingTransaction newCustTrans = new BankingTransaction(id, customerId, transactionType, transactionId);

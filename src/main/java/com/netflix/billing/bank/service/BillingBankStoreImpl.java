@@ -14,13 +14,26 @@ import com.netflix.billing.bank.model.BankingTransaction;
 import com.netflix.billing.bank.model.CustomerAccount;
 import com.netflix.billing.bank.model.TransactionType;
 
+/**
+ * 
+ * Bank store service provides a facade service for all operations associated
+ * with the customer. CsustomerAccount should not be accessed directly, all the
+ * operations associated with the customer should go through
+ * BillingBankStoreImpl
+ * 
+ * @author rkata
+ *
+ */
 @Service
 public class BillingBankStoreImpl implements BillingBankStore {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(BillingBankStoreImpl.class);
 
-	private ConcurrentHashMap<String, AccountSynchronizer> custActSyncMap = new ConcurrentHashMap<>();
-	private ConcurrentHashMap<String, CustomerAccount> customers = new ConcurrentHashMap<>();
+	// Every customer carries an accountSynchronizer which is used to synchronize
+	// calls that modify customerAccount.
+	private final ConcurrentHashMap<String, AccountSynchronizer> custActSyncMap = new ConcurrentHashMap<>();
+
+	private final ConcurrentHashMap<String, CustomerAccount> customers = new ConcurrentHashMap<>();
 
 	private AccountSynchronizer getOrCreateCustomerSynchronizer(String customerId) {
 		AccountSynchronizer newAcctSync = new AccountSynchronizer(customerId);
@@ -50,6 +63,12 @@ public class BillingBankStoreImpl implements BillingBankStore {
 		return customers.get(customerId);
 	}
 
+	/**
+	 * 
+	 * Performs credit operation on the customer account, write lock needs to be
+	 * acquired before any operation that modifies the state of the customer account
+	 * 
+	 */
 	public CustomerBalance processCredit(String customerId, CreditAmount creditReq) {
 		AccountSynchronizer custActSync = getOrCreateCustomerSynchronizer(customerId);
 		try {
@@ -82,6 +101,12 @@ public class BillingBankStoreImpl implements BillingBankStore {
 		return getCustomerAccountBalance(customerId);
 	}
 
+	/**
+	 * 
+	 * Performs debit operation on the customer account, write lock needs to be
+	 * acquired before any operation that modifies the state of the customer account
+	 * 
+	 */
 	public CustomerBalance processDebit(String customerId, DebitAmount debitAmount) {
 
 		AccountSynchronizer custActSync = getOrCreateCustomerSynchronizer(customerId);
@@ -113,6 +138,9 @@ public class BillingBankStoreImpl implements BillingBankStore {
 
 	/**
 	 * 
+	 * gets the latest customer balance, Performs credit operation on the customer
+	 * account, write lock needs to be acquired before any operation that modifies
+	 * the state of the customer account
 	 * 
 	 */
 	public CustomerBalance getCustomerAccountBalance(String customerId) {
@@ -136,6 +164,11 @@ public class BillingBankStoreImpl implements BillingBankStore {
 		return custBal;
 	}
 
+	/**
+	 * 
+	 * Gets the debitHistory after acquiring readLock()
+	 * 
+	 */
 	public DebitHistory debitHistory(String customerId) {
 		DebitHistory debitHistory = null;
 		AccountSynchronizer custActSync = getCustomerSynchronizer(customerId);

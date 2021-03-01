@@ -4,6 +4,14 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+/**
+ * Account synchronizer which guards the customer Account is composed of
+ * ReadWriteLock which synchornizes the calls that modify the state of the
+ * customerAccount.
+ * 
+ * @author rkata
+ *
+ */
 public class AccountSynchronizer {
 
 	private final String customerId;
