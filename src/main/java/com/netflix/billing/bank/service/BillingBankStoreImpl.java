@@ -43,7 +43,7 @@ public class BillingBankStoreImpl implements BillingBankStore {
 	private static final Logger LOGGER = LoggerFactory.getLogger(BillingBankStoreImpl.class);
 
 	@Autowired
-	private IdempotentRequestStore requestStore;
+	private IdempotentTransactionStore requestStore;
 
 	// Every customer carries an accountSynchronizer which is used to synchronize
 	// calls that modify customerAccount.
@@ -465,11 +465,11 @@ public class BillingBankStoreImpl implements BillingBankStore {
 		return processedDebit;
 	}
 
-	public IdempotentRequestStore getRequestStore() {
+	public IdempotentTransactionStore getRequestStore() {
 		return requestStore;
 	}
 
-	public void setRequestStore(IdempotentRequestStore requestStore) {
+	public void setRequestStore(IdempotentTransactionStore requestStore) {
 		this.requestStore = requestStore;
 	}
 }

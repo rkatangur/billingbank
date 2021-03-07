@@ -8,7 +8,7 @@ import com.netflix.billing.bank.model.BankingTransaction;
 import com.netflix.billing.bank.model.TransactionType;
 
 @Service
-public class IdempotentRequestStore {
+public class IdempotentTransactionStoreImpl implements IdempotentTransactionStore {
 
 	// Recording a key of customerid+credittype+transactionid ---> CreditRequest to
 	// store the CreditAmount request that is tied to a request.
@@ -35,5 +35,10 @@ public class IdempotentRequestStore {
 			custTransInMap = processedDebits.putIfAbsent(curTransaction.getId(), curTransaction);
 		}
 		return (custTransInMap == null) ? true : false;
+	}
+
+	public void clearAllRequests() {
+		processedCredits.clear();
+		processedDebits.clear();
 	}
 }

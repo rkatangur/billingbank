@@ -9,7 +9,7 @@ import com.netflix.billing.bank.controller.wire.CreditAmount;
 import com.netflix.billing.bank.controller.wire.CreditType;
 import com.netflix.billing.bank.controller.wire.CustomerBalance;
 import com.netflix.billing.bank.service.BillingBankStoreImpl;
-import com.netflix.billing.bank.service.IdempotentRequestStore;
+import com.netflix.billing.bank.service.IdempotentTransactionStoreImpl;
 import com.netflix.billing.bank.service.Util;
 
 public class BillingBankStoreTestWithOneCurrency {
@@ -21,7 +21,7 @@ public class BillingBankStoreTestWithOneCurrency {
 	@Before
 	public void setupBeforeTest() {
 		bankStore = new BillingBankStoreImpl();
-		bankStore.setRequestStore(new IdempotentRequestStore());
+		bankStore.setRequestStore(new IdempotentTransactionStoreImpl());
 	}
 
 	@After

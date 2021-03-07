@@ -1,10 +1,17 @@
 package com.netflix.billing.bank.service.itest;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +26,7 @@ import com.netflix.billing.bank.controller.wire.DebitHistory;
 import com.netflix.billing.bank.controller.wire.Money;
 import com.netflix.billing.bank.exception.ApiException;
 import com.netflix.billing.bank.service.BillingBankStore;
+import com.netflix.billing.bank.service.IdempotentTransactionStore;
 
 @RunWith(SpringRunner.class)
 @SpringBootTest
@@ -27,14 +35,29 @@ public class BillingBankStoreIntTest {
 	@Autowired
 	private BillingBankStore billingBankStoreService;
 
+	@Autowired
+	private IdempotentTransactionStore requestStore;
+
+	private static ExecutorService exeService = null;
+
+	@BeforeClass
+	public static void setupBeforeTestClass() {
+		exeService = Executors.newFixedThreadPool(10);
+	}
+
 	@Before
 	public void setupBeforeTest() {
-
 	}
 
 	@After
 	public void tearDownAfterTest() {
 		billingBankStoreService.delete("cust-123");
+		requestStore.clearAllRequests();
+	}
+
+	@AfterClass
+	public static void tearDownAfterClass() {
+		exeService.shutdownNow();
 	}
 
 	@Test
@@ -114,14 +137,15 @@ public class BillingBankStoreIntTest {
 
 	@Test
 	public void postMultipleCreditsOfUSDType() {
-		CreditAmount creditAmt = buildCreditAmount("trans-123", CreditType.GIFTCARD, "USD", 15l);
-		billingBankStoreService.processCredit("cust-123", creditAmt);
+		billingBankStoreService.processCredit("cust-123",
+				buildCreditAmount("trans-123", CreditType.GIFTCARD, "USD", 15l));
 
-		CreditAmount creditAmt1 = buildCreditAmount("trans-124", CreditType.GIFTCARD, "USD", 20l);
-		billingBankStoreService.processCredit("cust-123", creditAmt1);
+		billingBankStoreService.processCredit("cust-123",
+				buildCreditAmount("trans-124", CreditType.GIFTCARD, "USD", 20l));
 
 		// Posting the same transaction again
-		billingBankStoreService.processCredit("cust-123", creditAmt);
+		billingBankStoreService.processCredit("cust-123",
+				buildCreditAmount("trans-124", CreditType.GIFTCARD, "USD", 20l));
 
 		CustomerBalance custBal = billingBankStoreService.getCustomerAccountBalance("cust-123");
 
@@ -285,6 +309,100 @@ public class BillingBankStoreIntTest {
 		Assert.assertEquals(1, cashCreditsByCurrency.size());
 		Assert.assertEquals("USD", cashCreditsByCurrency.get(0).getCurrency());
 		Assert.assertEquals(27l, (long) cashCreditsByCurrency.get(0).getAmount());
+	}
+
+	@Test
+	public void postMultipleCreditReqsParallelyOfUSDTypeFromOneCustomer() {
+		List<Future<?>> tasks = new ArrayList<Future<?>>();
+
+		tasks.add(exeService.submit(() -> {
+			billingBankStoreService.processCredit("cust-123",
+					buildCreditAmount("trans-123", CreditType.GIFTCARD, "USD", 15l));
+		}));
+
+		tasks.add(exeService.submit(() -> {
+			billingBankStoreService.processCredit("cust-123",
+					buildCreditAmount("trans-124", CreditType.GIFTCARD, "USD", 20l));
+		}));
+
+		// Posting the same transaction again
+		tasks.add(exeService.submit(() -> {
+			billingBankStoreService.processCredit("cust-123",
+					buildCreditAmount("trans-124", CreditType.GIFTCARD, "USD", 20l));
+		}));
+
+		waitOnFutures(tasks);
+
+		CustomerBalance custBal = billingBankStoreService.getCustomerAccountBalance("cust-123");
+
+		Assert.assertNotNull(custBal);
+		Assert.assertEquals(1, custBal.getBalanceAmounts().size());
+		List<Money> creditsByCurency = custBal.getBalanceAmounts().get(CreditType.GIFTCARD);
+		Assert.assertEquals(1, creditsByCurency.size());
+		Assert.assertEquals("USD", creditsByCurency.get(0).getCurrency());
+		Assert.assertEquals(35l, (long) creditsByCurency.get(0).getAmount());
+	}
+
+	@Test
+	public void postMultipleCreditReqsParallelyOfUSDTypeFromMoreThanOneCustomer() {
+		List<Future<?>> tasks = new ArrayList<Future<?>>();
+
+		tasks.add(exeService.submit(() -> {
+			billingBankStoreService.processCredit("cust-123",
+					buildCreditAmount("trans-123", CreditType.GIFTCARD, "USD", 15l));
+		}));
+
+		tasks.add(exeService.submit(() -> {
+			billingBankStoreService.processCredit("cust-123",
+					buildCreditAmount("trans-124", CreditType.GIFTCARD, "USD", 20l));
+		}));
+
+		// Posting the same transaction again
+		tasks.add(exeService.submit(() -> {
+			billingBankStoreService.processCredit("cust-124",
+					buildCreditAmount("trans-126", CreditType.GIFTCARD, "USD", 120));
+		}));
+
+		// Posting the same transaction again
+		tasks.add(exeService.submit(() -> {
+			billingBankStoreService.processCredit("cust-125",
+					buildCreditAmount("trans-127", CreditType.GIFTCARD, "USD", 225));
+		}));
+
+		waitOnFutures(tasks);
+
+		CustomerBalance cust123Bal = billingBankStoreService.getCustomerAccountBalance("cust-123");
+		Assert.assertNotNull(cust123Bal);
+		Assert.assertEquals(1, cust123Bal.getBalanceAmounts().size());
+		Assert.assertEquals(1, cust123Bal.getBalanceAmounts().get(CreditType.GIFTCARD).size());
+		Assert.assertEquals("USD", cust123Bal.getBalanceAmounts().get(CreditType.GIFTCARD).get(0).getCurrency());
+		Assert.assertEquals(35l, (long) cust123Bal.getBalanceAmounts().get(CreditType.GIFTCARD).get(0).getAmount());
+
+		CustomerBalance cust124Bal = billingBankStoreService.getCustomerAccountBalance("cust-124");
+		Assert.assertNotNull(cust124Bal);
+		Assert.assertEquals(1, cust124Bal.getBalanceAmounts().size());
+		Assert.assertEquals(1, cust124Bal.getBalanceAmounts().get(CreditType.GIFTCARD).size());
+		Assert.assertEquals("USD", cust124Bal.getBalanceAmounts().get(CreditType.GIFTCARD).get(0).getCurrency());
+		Assert.assertEquals(120l, (long) cust124Bal.getBalanceAmounts().get(CreditType.GIFTCARD).get(0).getAmount());
+
+		CustomerBalance cust125Bal = billingBankStoreService.getCustomerAccountBalance("cust-125");
+		Assert.assertNotNull(cust125Bal);
+		Assert.assertEquals(1, cust125Bal.getBalanceAmounts().size());
+		Assert.assertEquals(1, cust125Bal.getBalanceAmounts().get(CreditType.GIFTCARD).size());
+		Assert.assertEquals("USD", cust125Bal.getBalanceAmounts().get(CreditType.GIFTCARD).get(0).getCurrency());
+		Assert.assertEquals(225l, (long) cust125Bal.getBalanceAmounts().get(CreditType.GIFTCARD).get(0).getAmount());
+	}
+
+	private void waitOnFutures(List<Future<?>> tasks) {
+		for (Future<?> f : tasks) {
+			try {
+				f.get();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			} catch (ExecutionException e) {
+				e.printStackTrace();
+			}
+		}
 	}
 
 	private CreditAmount buildCreditAmount(String transactionId, CreditType creditType, String currency, long amount) {
