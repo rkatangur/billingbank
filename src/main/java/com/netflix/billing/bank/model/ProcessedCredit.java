@@ -63,7 +63,7 @@ public class ProcessedCredit implements Cloneable {
 	}
 
 	@Override
-	protected ProcessedCredit clone() throws CloneNotSupportedException {
+	public ProcessedCredit clone() throws CloneNotSupportedException {
 		return (ProcessedCredit) super.clone();
 	}
 

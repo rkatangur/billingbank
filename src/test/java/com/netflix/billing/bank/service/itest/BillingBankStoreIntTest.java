@@ -1,4 +1,4 @@
-package com.netflix.billing.bank;
+package com.netflix.billing.bank.service.itest;
 
 import java.util.List;
 
@@ -22,7 +22,7 @@ import com.netflix.billing.bank.service.BillingBankStore;
 
 @RunWith(SpringRunner.class)
 @SpringBootTest
-public class BillingbankApplicationTests {
+public class BillingBankStoreIntTest {
 
 	@Autowired
 	private BillingBankStore billingBankStoreService;

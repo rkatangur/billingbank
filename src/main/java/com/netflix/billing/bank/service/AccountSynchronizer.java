@@ -32,8 +32,16 @@ public class AccountSynchronizer {
 		readLock.lock();
 	}
 
+	public void acquireReadLockInterruptibly() throws InterruptedException {
+		readLock.lockInterruptibly();
+	}
+
 	public void acquireWriteLock() {
 		writeLock.lock();
+	}
+
+	public void acquireWriteLockInterruptibly() throws InterruptedException {
+		writeLock.lockInterruptibly();
 	}
 
 	public void releaseReadLock() {
